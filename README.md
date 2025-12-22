@@ -1,228 +1,179 @@
-# 📊 Rating–Review Sentiment Consistency Analysis (Big Data)
+# 📊 Comparative Sentiment Analysis using Apache Spark MLlib
 
-# Hướng dẫn chạy dự án(dev)
-## 1. Khởi tạo tài nguyên và môi trường
+---
 
-```commandline
-docker compose up
+## Nhóm thực hiện
+
+| Thành viên (Họ và tên + MSSV) | Vai trò/Nhiệm vụ |
+|-------------------------------|------------------|
+| Trần Anh Đức – A44170         | All              |
+
+---
+
+## 1. Giới thiệu đề tài
+
+**Tên đề tài:** Comparative Sentiment Analysis on Reviews using Apache Spark MLlib  
+
+**Mục tiêu:** So sánh hiệu quả của các mô hình MLlib khi phân tích sentiment trên review text, so sánh dữ liệu **thô (raw)** và **đã làm sạch (clean)**.  
+
+**Công nghệ:**
+- Apache Spark (DataFrame + MLlib)
+- Cassandra (NoSQL phân tán)
+- Python (pandas, matplotlib, seaborn) cho trực quan hóa
+- Docker để triển khai môi trường thống nhất
+
+---
+
+## 2. Mục tiêu
+
+- Chạy tất cả mô hình MLlib: Logistic Regression, Naive Bayes, Decision Tree, Random Forest, GBT.  
+- Đánh giá **Accuracy, Precision, Recall, F1-score** cho từng mô hình.  
+- So sánh hiệu quả **dữ liệu raw vs clean**.  
+- Phân tích ảnh hưởng của **độ dài review** đến hiệu quả mô hình.  
+- Trực quan hóa kết quả bằng biểu đồ PNG và HTML.
+
+---
+
+## 3. Chuẩn bị dữ liệu
+
+**Nguồn:** Amazon Fine Food Reviews Dataset (hoặc dataset tương tự).  
+
+**Lưu trữ:** Cassandra Keyspace `reviews_ks` với các bảng:
+- `reviews_raw`
+- `reviews_cleaned`
+- `reviews_labels`
+- `model_predictions`
+- `model_metrics`
+
+---
+
+## 4. Tiền xử lý dữ liệu
+
+**Các bước:**
+1. Loại bỏ ký tự đặc biệt và HTML tags.  
+2. Chuyển text về lowercase.  
+3. Tính toán độ dài review (`text_length`).  
+4. Gán bucket độ dài (`short`, `medium`, `long`) để phân tích metrics theo độ dài.
+
+---
+
+## 5. Pipeline phân tích bằng Spark MLlib
+
+### 5.1 Workflow tổng thể
+```text
+Raw CSV → Cassandra → Data Cleaning (Spark)
+    ↓
+Read Data → Tokenizer → StopWords → TF-IDF
+    ↓
+Run MLlib Models (LR, NB, DT, RF, GBT)
+    ↓
+Evaluate metrics: Accuracy, Precision, Recall, F1
+    ↓
+Aggregate metrics theo model, data_type, length_bucket
+    ↓
+Visualize results (Bar/Line chart)
 ```
 
-## 2. Truy truy cập môi trường 
-```commandline
+### 5.2 Metrics đánh giá
+
+* Accuracy
+* Precision
+* Recall
+* F1-score
+* Phân tích theo **length_bucket**: short / medium / long
+
+---
+
+## 6. Trực quan hóa kết quả
+
+**Biểu đồ:**
+
+| Biểu đồ         | Mục đích                                                 |
+| --------------- | -------------------------------------------------------- |
+| Bar chart       | So sánh Accuracy, Precision, Recall, F1 giữa các mô hình |
+| Multi-bar chart | So sánh clean vs raw                                     |
+| HTML dashboard  | Tổng hợp tất cả PNG vào một file dễ mở                   |
+
+---
+
+## 7. Hướng dẫn chạy dự án
+
+### 7.1 Khởi tạo môi trường Docker
+
+```bash
+docker compose up -d
+```
+
+### 7.2 Truy cập môi trường
+
+```bash
 docker compose exec cassandra cqlsh
 docker compose exec python bash
 ```
 
-## 3. Truy truy cập spark(lưu ý phải ở trong môi trường python(tức docker))
-```commandline
-pyspark --master spark://spark-master:7077
-```
-
-## 4. Lưu dữ liệu vào cassandra
-```commandline
-python3 src/storage/main.py 
-```
-
-
 ---
 
-## 1. Giới thiệu
+## 8. Sơ đồ dữ liệu (ERD)
 
-### Tên đề tài
+```mermaid
+erDiagram
+    REVIEWS_RAW {
+        int id PK
+        int score
+        int helpfulnessnumerator
+        int helpfulnessdenominator
+        text text
+        int text_length
+    }
 
-**Consistency Analysis between User Ratings and Review Sentiment using Apache Spark**
+    REVIEWS_CLEANED {
+        int id PK
+        int score
+        text clean_text
+        int clean_text_length
+        text length_bucket
+    }
 
-### Mục tiêu
+    REVIEWS_LABELS {
+        int id PK
+        int rating_label
+        text sentiment_text
+    }
 
-Phân tích mức độ **tương đồng (consistency)** giữa:
+    REVIEWS_FEATURES {
+        int id PK
+        text data_type
+        blob features
+        text text_field
+    }
 
-* **Điểm đánh giá (Score 1–5 sao)** do người dùng chấm
-* **Cảm xúc (Sentiment)** được trích xuất từ nội dung comment (review text)
+    MODEL_PREDICTIONS {
+        text model_name PK
+        text data_type PK
+        int id PK
+        int prediction
+        float probability
+    }
 
-Bài toán nhằm trả lời câu hỏi:
+    MODEL_METRICS {
+        text model_name PK
+        text data_type PK
+        text length_bucket PK
+        float accuracy
+        float precision
+        float recall
+        float f1_score
+    }
 
-> *Liệu số sao người dùng chấm có thực sự phản ánh đúng nội dung đánh giá hay không?*
+    REVIEWS_RAW ||--|| REVIEWS_CLEANED : processed_into
+    REVIEWS_RAW ||--|| REVIEWS_LABELS : generates
+    REVIEWS_RAW ||--o{ REVIEWS_FEATURES : feature_for
+    REVIEWS_CLEANED ||--o{ REVIEWS_FEATURES : feature_for
+    REVIEWS_FEATURES ||--o{ MODEL_PREDICTIONS : used_for
+    MODEL_PREDICTIONS ||--o{ MODEL_METRICS : aggregated_into
 
-Đây là một bài toán phân tích dữ liệu lớn kết hợp **Spark SQL + Spark MLlib**, không yêu cầu kiến thức domain về sản phẩm.
-
----
-
-## 2. Công nghệ sử dụng
-
-| Thành phần        | Công nghệ              |
-| ----------------- |------------------------|
-| Ngôn ngữ          | Python                 |
-| Xử lý dữ liệu lớn | Apache Spark           |
-| Machine Learning  | Spark MLlib            |
-| Lưu trữ phân tán  | Cassandra (Docker)     |
-| Trực quan hóa     | matplotlib / seaborn   |
-| Quản lý mã nguồn  | GitHub                 |
-
----
-
-## 3. Cấu trúc thư mục dự án
-
-```text
-bigdata-rating-sentiment/
-│
-├── data/
-│   ├── amazon-food-reviews-dataset.csv(tải file xuống vứt nó vô đây)
-│
-├── spark/
-│   ├── 01_load_data.py
-│   ├── 02_preprocessing.py
-│   ├── 03_sentiment_model.py
-│   ├── 04_consistency_analysis.py
-│
-├── visualization/
-│   ├── plots.py
-│
-├── output/
-│   ├── statistics/
-│   ├── figures/
-│
-├── src/
-│   ├── storage/
-│   ├── service/
-├── requirements.txt
-├── docker-compose.yml
-├── Dockerfile
-└── README.md
 ```
 
 ---
 
-## 4. Luồng xử lý tổng thể (Workflow)
-
-```text
-Raw Data (CSV)
-   ↓
-Data Cleaning & Store in Cassandra
-   ↓
-Sentiment Analysis (Spark MLlib) → Generate SentimentScore & SentimentLabel
-   ↓
-Rating–Sentiment Consistency Analysis (compare Score vs SentimentScore/Label)
-   ↓
-Visualization & Reporting
-```
-
-### Dữ liệu sử dụng
-
-* **Amazon Fine Food Reviews Dataset** (nguồn mở)
-* Định dạng CSV
-* Hàng trăm nghìn bản ghi
-
----
-
-## 6. Bước 2 – Tiền xử lý dữ liệu
-
-### 6.1 Làm sạch dữ liệu
-
-Các bước tiền xử lý:
-
-* Loại bỏ review bị thiếu `Score` hoặc `Text`
-* Chuẩn hóa timestamp
-* Loại bỏ ký tự đặc biệt
-* Chuyển text về lowercase
-
-**Lý do:**
-
-* Giảm nhiễu dữ liệu
-* Tăng độ chính xác cho mô hình NLP
-
-### 6.2 Tạo nhãn rating
-
-Quy ước:
-
-* Score ≥ 4 → `Positive`
-* Score ≤ 2 → `Negative`
-* Score = 3 → `Neutral` (có thể loại bỏ)
-
----
-
-## 9. Bước 5 – Phân tích cảm xúc (Sentiment Analysis)
-
-### Pipeline Spark MLlib
-
-1. Tokenizer
-2. StopWordsRemover
-3. TF-IDF
-4. Classification Model
-
-   * Logistic Regression
-   * Naive Bayes
-
-### Output
-
-* `predicted_sentiment ∈ {Positive, Negative}`
-
----
-
-## 10. Bước 6 – Phân tích Rating–Sentiment Consistency
-
-### Định nghĩa
-
-* **Matched**: Score label == Predicted sentiment
-* **Mismatched**: Score label ≠ Predicted sentiment
-
-### Các phân tích chính
-
-* Tỷ lệ match / mismatch tổng thể
-* Mismatch theo từng mức sao
-* Consistency theo thời gian
-* Review length vs consistency
-
----
-
-## 11. Bước 7 – Trực quan hóa kết quả
-
-### Các biểu đồ sử dụng
-
-| Biểu đồ          | Mục đích                       |
-| ---------------- | ------------------------------ |
-| Bar chart        | Phân bố score                  |
-| Bar chart        | Positive vs Negative sentiment |
-| Confusion Matrix | So sánh score vs sentiment     |
-| Bar chart        | Mismatch theo score            |
-| Line chart       | Consistency theo năm           |
-| Box plot         | Độ dài review vs consistency   |
-
----
-
-## 12. Data collection & Cassandrah giá 1⭐ và 5⭐ có mức độ tương đồng cao với nội dung review
-
-* Đánh giá 3⭐ có tỷ lệ không nhất quán cao nhất
-* Cho thấy người dùng thường pip install -r requirements.txt
-
-# Khởi động Cassandra
-
-docker-compose up -dảm xúc
-
----
-
-## 13. Phân công nhóm (ví dụ)
-
-| Thành viên | Nhiệm vụ                  |
-| ---------- | ------------------------- |
-| SV1        | Data collection & HDFS    |
-| SV2        | Preprocessing & Spark SQL |
-| SV3        | Spark MLlib               |
-| SV4        | Visualization & Report    |
-
----
-
-## 14. Hướng dẫn chinstall -r requirements.txt
-
-spark-submit spark/01_load_data.py
-spark-submit spark/02_preprocessing.py
-spark-submit spark/03_sentiment_model.py
-spark-submit spark/04--
-
-## 15. Ghi chú
-
-* Dự án tập trung vào **Big Data processing**, không yêu cầu kiến thức domain sản phẩm
-* Mục tiêu chính là **phân tích dữ liệu ở quy mô lớn bằng Spark**
-
----
-
-✅ *Tài liệu này phục vụ cho báo cáo, triển khai code và thuyết trình bảo vệ môn Dữ liệu lớn.*
+* Tất cả scripts đều chạy tự động trong Docker, đảm bảo reproducible environment.

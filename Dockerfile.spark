@@ -1,0 +1,11 @@
+FROM apache/spark:3.5.1
+
+USER root
+
+# Cài numpy cho pyspark.ml
+RUN pip install --no-cache-dir numpy
+
+# (khuyến nghị) tạo sẵn ivy dir để khỏi lỗi sau này
+RUN mkdir -p /tmp/.ivy2/cache && chown -R spark:spark /tmp/.ivy2
+
+USER spark
